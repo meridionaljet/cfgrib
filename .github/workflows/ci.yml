@@ -3,11 +3,13 @@ name: ci
 on:
   # Trigger the workflow on push to master or develop, except tag creation
   push:
-    branches:
-      - 'master'
-      - 'develop'
+    branches-ignore:
+      - "**"
+    # branches:
+    # - 'master'
+    # - 'develop'
     tags-ignore:
-      - '**'
+      - "**"
 
   # Trigger the workflow on pull request
   pull_request: ~
