@@ -107,6 +107,7 @@ class CfGribBackend(BackendEntrypoint):
         errors: str = "warn",
         extra_coords: T.Dict[str, str] = {},
         coords_as_attributes: T.Dict[str, str] = {},
+        cache_metadata: bool = True,
         cache_geo_coords: bool = True,
         values_dtype: np.dtype = messages.DEFAULT_VALUES_DTYPE,
     ) -> xr.Dataset:
@@ -123,6 +124,7 @@ class CfGribBackend(BackendEntrypoint):
             errors=errors,
             extra_coords=extra_coords,
             coords_as_attributes=coords_as_attributes,
+            cache_metadata=cache_metadata,
             cache_geo_coords=cache_geo_coords,
             values_dtype=values_dtype,
         )
