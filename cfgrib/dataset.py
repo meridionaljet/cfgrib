@@ -270,16 +270,6 @@ COORD_ATTRS = {
 GEOCACHE: T.Dict[
     T.Hashable, T.Tuple[T.Tuple[str, ...], T.Tuple[int, ...], T.Dict[str, "Variable"]]
 ] = {}
-METADATA_CACHE: T.Dict[T.Tuple, T.Dict[str, T.Any]] = {}
-# Note: Keys whose values form coordinate dimensions (like level, time, step, number) 
-# are generally not suitable for this scalar cache, as their unique values
-# across the index are needed.
-CACHEABLE_KEYS = {
-    'gridType', 'numberOfPoints', 'NV', # Grid related (besides detailed geometry)
-    'units', 'cfName', 'shortName', 'name', # Parameter related
-    'dataType', 'missingValue', # Data representation
-    # Could add other scalar keys read often via index.first() or index.getone()
-}
 
 
 class DatasetBuildError(ValueError):
@@ -404,15 +394,13 @@ GRID_TYPES_2D_NON_DIMENSION_COORDS = {
 
 
 def build_geography_coordinates(
-    first: abc.Field, encode_cf: T.Sequence[str], errors: str, cached_metadata: dict[str, T.Any], log: logging.Logger = LOG, 
+    first: abc.Field, encode_cf: T.Sequence[str], errors: str, log: logging.Logger = LOG
 ) -> T.Tuple[T.Tuple[str, ...], T.Tuple[int, ...], T.Dict[str, Variable]]:
     geo_coord_vars = {}  # type: T.Dict[str, Variable]
-    grid_type = cached_metadata["gridType"] if "gridType" in cached_metadata else first["gridType"]
+    grid_type = first["gridType"]
     if "geography" in encode_cf and grid_type in GRID_TYPES_DIMENSION_COORDS:
         geo_dims = ("latitude", "longitude")  # type: T.Tuple[str, ...]
-        nx = cached_metadata["Nx"] if "Nx" in cached_metadata else first["Nx"]
-        ny = cached_metadata["Ny"] if "Ny" in cached_metadata else first["Ny"]
-        geo_shape = (ny, nx)  # type: T.Tuple[int, ...]
+        geo_shape = (first["Ny"], first["Nx"])  # type: T.Tuple[int, ...]
         latitudes = np.array(first["distinctLatitudes"], ndmin=1)
         geo_coord_vars["latitude"] = Variable(
             dimensions=("latitude",), data=latitudes, attributes=COORD_ATTRS["latitude"].copy()
@@ -427,9 +415,7 @@ def build_geography_coordinates(
         )
     elif "geography" in encode_cf and grid_type in GRID_TYPES_2D_NON_DIMENSION_COORDS:
         geo_dims = ("y", "x")
-        nx = cached_metadata["Nx"] if "Nx" in cached_metadata else first["Nx"]
-        ny = cached_metadata["Ny"] if "Ny" in cached_metadata else first["Ny"]
-        geo_shape = (ny, nx)
+        geo_shape = (first["Ny"], first["Nx"])
         try:
             geo_coord_vars["latitude"] = Variable(
                 dimensions=("y", "x"),
@@ -487,11 +473,11 @@ def encode_cf_first(data_var_attrs, encode_cf=("parameter", "time"), time_dims=(
     return coords_map
 
 
-def read_data_var_attrs(first: abc.Field, extra_keys: T.List[str], cached_metadata: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
+def read_data_var_attrs(first: abc.Field, extra_keys: T.List[str]) -> T.Dict[str, T.Any]:
     attributes = {}
     for key in extra_keys:
         try:
-            value = cached_metadata[key] if key in cached_metadata else first[key]
+            value = first[key]
             if value is not None:
                 attributes["GRIB_" + key] = value
         except Exception:
@@ -510,35 +496,14 @@ def build_variable_components(
     time_dims: T.Sequence[str] = ("time", "step"),
     extra_coords: T.Dict[str, str] = {},
     coords_as_attributes: T.Dict[str, str] = {},
-    cache_metadata: bool = True,
     cache_geo_coords: bool = True,
     values_dtype: np.dtype = messages.DEFAULT_VALUES_DTYPE,
 ) -> T.Tuple[T.Dict[str, int], Variable, T.Dict[str, Variable]]:
-    paramId = index.getone('paramId')
-    typeOfLevel = index.getone('typeOfLevel')
-    stepType = index.getone('stepType')
-    gds_md5sum = index.get("md5GridSection")
-    cache_key = (gds_md5sum, paramId, typeOfLevel, stepType)
-    first = index.first()
-    if cache_metadata:
-        cached_metadata = METADATA_CACHE.get(cache_key, {})
-        if not cached_metadata:
-            for key in CACHEABLE_KEYS:
-                try:
-                    value = first.get(key, default=None)
-                    if value is not None and value not in ('undef', 'unknown'):
-                        cached_metadata[key] = value
-                except Exception:
-                    pass
-            METADATA_CACHE[cache_key] = cached_metadata
-    else:
-        cached_metadata = {}
-
     data_var_attrs = enforce_unique_attributes(index, DATA_ATTRIBUTES_KEYS, filter_by_keys)
-    grid_type = cached_metadata["gridType"] if "gridType" in cached_metadata else index.getone("gridType")
-    grid_type_keys = GRID_TYPE_MAP.get(grid_type, [])
+    grid_type_keys = GRID_TYPE_MAP.get(index.getone("gridType"), [])
     extra_keys = sorted(list(read_keys) + EXTRA_DATA_ATTRIBUTES_KEYS + grid_type_keys)
-    extra_attrs = read_data_var_attrs(first, extra_keys, cached_metadata)
+    first = index.first()
+    extra_attrs = read_data_var_attrs(first, extra_keys)
     data_var_attrs.update(**extra_attrs)
     coords_map = encode_cf_first(
         data_var_attrs, encode_cf, time_dims,
@@ -577,6 +542,7 @@ def build_variable_components(
     header_dimensions = tuple(d for d, c in coord_vars.items() if not squeeze or c.data.size > 1)
     header_shape = tuple(coord_vars[d].data.size for d in header_dimensions)
 
+    gds_md5sum = index.get("md5GridSection")
     # If parameter is associated with a single grid definition, try to cache geometry
     if cache_geo_coords and gds_md5sum and len(gds_md5sum) == 1:
         md5sum = gds_md5sum[0]
@@ -585,10 +551,10 @@ def build_variable_components(
             log.debug(f"cache hit for {cache_key}; using cached geometry")
             geo_coords = GEOCACHE[cache_key]
         else:
-            geo_coords = build_geography_coordinates(first, encode_cf, errors)
+            geo_coords = build_geography_coordinates(index.first(), encode_cf, errors)
             GEOCACHE[cache_key] = geo_coords
     else:
-        geo_coords = build_geography_coordinates(first, encode_cf, errors)
+        geo_coords = build_geography_coordinates(index.first(), encode_cf, errors)
 
     geo_dims, geo_shape, geo_coord_vars = geo_coords
     dimensions = header_dimensions + geo_dims
