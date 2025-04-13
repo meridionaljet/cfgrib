@@ -708,6 +708,7 @@ def build_dataset_components(
     time_dims: T.Sequence[str] = ("time", "step"),
     extra_coords: T.Dict[str, str] = {},
     coords_as_attributes: T.Dict[str, str] = {},
+    cache_metadata: bool = True,
     cache_geo_coords: bool = True,
     values_dtype: np.dtype = messages.DEFAULT_VALUES_DTYPE,
 ) -> T.Tuple[T.Dict[str, int], T.Dict[str, Variable], T.Dict[str, T.Any], T.Dict[str, T.Any]]:
@@ -736,6 +737,7 @@ def build_dataset_components(
                 time_dims=time_dims,
                 extra_coords=extra_coords,
                 coords_as_attributes=coords_as_attributes,
+                cache_metadata=cache_metadata,
                 cache_geo_coords=cache_geo_coords,
                 values_dtype=values_dtype,
             )
