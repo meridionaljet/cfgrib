@@ -518,7 +518,7 @@ def build_variable_components(
     typeOfLevel = index.getone('typeOfLevel')
     stepType = index.getone('stepType')
     gds_md5sum = index.get("md5GridSection")
-    cache_key = (tuple(gds_md5sum) if gds_md5sum else (), paramId, typeOfLevel, stepType)
+    cache_key = (gds_md5sum, paramId, typeOfLevel, stepType)
     first = index.first()
     if cache_metadata:
         cached_metadata = METADATA_CACHE.get(cache_key, {})
@@ -585,10 +585,10 @@ def build_variable_components(
             log.debug(f"cache hit for {cache_key}; using cached geometry")
             geo_coords = GEOCACHE[cache_key]
         else:
-            geo_coords = build_geography_coordinates(first, encode_cf, errors, cached_metadata)
+            geo_coords = build_geography_coordinates(first, encode_cf, errors)
             GEOCACHE[cache_key] = geo_coords
     else:
-        geo_coords = build_geography_coordinates(first, encode_cf, errors, cached_metadata)
+        geo_coords = build_geography_coordinates(first, encode_cf, errors)
 
     geo_dims, geo_shape, geo_coord_vars = geo_coords
     dimensions = header_dimensions + geo_dims
